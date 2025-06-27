@@ -42,11 +42,18 @@ fn main() {
 }
 
 fn handle_request(stream: &mut TcpStream, root_path_buffer: Rc<std::path::PathBuf>) {
+	match stream.peer_addr() {
+		Ok(address) => {
+			println!("{}", address);
+		}
+		Err(e) => {
+			eprintln!("Failed getting address: {}", &e);
+		}
+	}
 	let mut buffer: [u8; 1024] = [0; 1024];
 	match stream.read(&mut buffer) {
 		Ok(_length) => {
 			let request_string = String::from_utf8_lossy(&buffer);
-			print!("{}", &request_string);
 			let request_data: Vec<&str> = request_string.split_ascii_whitespace().collect();
 			match (
 				request_data.get(0),
