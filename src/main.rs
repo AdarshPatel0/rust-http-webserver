@@ -6,7 +6,7 @@ use std::{
 	rc::Rc,
 };
 
-const ADDRESS: &str = "127.0.0.1:8080";
+const ADDRESS: &str = "0.0.0.0:8080";
 
 fn main() {
 	let root_path = Path::new("root");
@@ -54,62 +54,40 @@ fn handle_request(stream: &mut TcpStream, root_path_buffer: Rc<std::path::PathBu
 				request_data.get(2),
 			) {
 				(Some(&"GET"), Some(request_path), Some(&"HTTP/1.1")) => {
-					let request_path = format!("root{}", request_path);
-					let file_path = Path::new(&request_path);
+					let mut request_path = format!("root{}", request_path);
+					let mut file_path = Path::new(&request_path);
 					let requested_path_buffer: std::path::PathBuf;
+					if !file_path.exists() {
+						println!("Missing file: {}", &request_path);
+						send_file(stream, &Path::new("root/404.html"), "404 Not Found");
+						return;
+					}
 					match fs::canonicalize(&request_path) {
 						Ok(result) => {
 							requested_path_buffer = result;
 						}
 						Err(e) => {
 							println!("Failed to canonicalize path: {}", &e);
-							let header_content = "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
+							let header_content =
+								"HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
 							send_response(stream, &header_content);
 							return;
 						}
 					}
 					if !requested_path_buffer.starts_with(&*root_path_buffer) {
-							let header_content = "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n";
-							send_response(stream, &header_content);
+						let header_content = "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n";
+						send_response(stream, &header_content);
 						return;
 					}
-					if file_path.exists() {
-						match File::open(&file_path) {
-							Ok(mut file) => {
-								let mut file_content: Vec<u8> = Vec::new();
-								match file.read_to_end(&mut file_content) {
-									Ok(_length) => {
-										let header_content = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
-										send_response(stream, &header_content);
-										match stream.write_all(&file_content) {
-											Err(e) => {
-												eprintln!("Fail to send content: {}", &e)
-											}
-											_ => {}
-										}
-									}
-									Err(e) => {
-										eprint!("Error reading file: {}", &e);
-										let header_content = "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
-										send_response(stream, &header_content);
-									}
-								}
-							}
-							Err(e) => {
-								eprintln!("Error opening file: {}", &e);
-								let header_content = "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
-								send_response(stream, &header_content);
-							}
-						}
-					} else {
-						println!("Missing file: {}", &request_path);
-						let header_content = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
-						send_response(stream, &header_content);
+					if file_path.is_dir() {
+						request_path = format!("{}index.html", request_path);
+						file_path = Path::new(&request_path);
 					}
+					send_file(stream, &file_path, "200 OK");
 				}
 				_ => {
 					eprintln!("Bad Request!");
-					let response = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD\r\n\r\n";
+					let response = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\n\r\n";
 					send_response(stream, &response);
 				}
 			}
@@ -123,8 +101,52 @@ fn handle_request(stream: &mut TcpStream, root_path_buffer: Rc<std::path::PathBu
 fn send_response(stream: &mut TcpStream, response_content: &str) {
 	match stream.write_all(&response_content.as_bytes()) {
 		Err(e) => {
-			eprintln!("Fail to send content: {}", &e)
+			eprintln!("Failed to send content: {}", &e)
 		}
 		_ => {}
+	}
+}
+
+fn send_file(stream: &mut TcpStream, file_path: &Path, code: &str) {
+	let extention = file_path
+		.extension() 
+		.and_then(|s| s.to_str())
+		.unwrap_or("");
+	let content_type = match extention {
+		"html" => "text/html",
+		"png" => "image/png",
+		"jpg" | "jpeg" => "image/jpeg",
+		"css" => "text/css",
+		"js" => "application/javascript",
+		_ => "application/octet-stream",
+	};
+	match File::open(&file_path) {
+		Ok(mut file) => {
+			let mut file_content: Vec<u8> = Vec::new();
+			let response = format!("HTTP/1.1 {}\r\nContent-Type: {}\r\n\r\n", &code, &content_type);
+			send_response(stream, &response);
+			match file.read_to_end(&mut file_content) {
+				Ok(_length) => match stream.write_all(&file_content) {
+					Err(e) => {
+						eprintln!("Fail to send content: {}", &e);
+						let header_content =
+							"HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
+						send_response(stream, &header_content);
+					}
+					_ => {}
+				},
+				Err(e) => {
+					eprint!("Error reading file: {}", &e);
+					let header_content =
+						"HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
+					send_response(stream, &header_content);
+				}
+			}
+		}
+		Err(e) => {
+			eprintln!("Error opening file: {}", &e);
+			let header_content = "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
+			send_response(stream, &header_content);
+		}
 	}
 }
