@@ -2,18 +2,17 @@ use std::{
 	fs::{self, File},
 	io::prelude::*,
 	net::{TcpListener, TcpStream},
-	path::Path,
-	rc::Rc,
+	path::Path
 };
 
 const ADDRESS: &str = "127.0.0.1:8080";
 
 fn main() {
 	let root_path = Path::new("root");
-	let root_path_buffer: Rc<std::path::PathBuf>;
+	let root_path_buffer: std::path::PathBuf;
 	match fs::canonicalize(root_path) {
 		Ok(result) => {
-			root_path_buffer = result.into();
+			root_path_buffer = result;
 		}
 		Err(e) => {
 			eprintln!("ERROR: FAILED TO FIND ROOT DIRECTORY! {}", &e);
@@ -26,8 +25,7 @@ fn main() {
 			for stream in listener.incoming() {
 				match stream {
 					Ok(mut stream) => {
-						let request_copy = Rc::clone(&root_path_buffer);
-						handle_request(&mut stream, request_copy);
+						handle_request(&mut stream, root_path_buffer.clone());
 					}
 					Err(e) => {
 						eprintln!("Failed to accept connection: {}", &e);
@@ -41,7 +39,7 @@ fn main() {
 	}
 }
 
-fn handle_request(stream: &mut TcpStream, root_path_buffer: Rc<std::path::PathBuf>) {
+fn handle_request(stream: &mut TcpStream, root_path_buffer: std::path::PathBuf) {
 	match stream.peer_addr() {
 		Ok(address) => {
 			println!("{}", address);
