@@ -6,7 +6,7 @@ use std::{
 	rc::Rc,
 };
 
-const ADDRESS: &str = "0.0.0.0:8080";
+const ADDRESS: &str = "127.0.0.1:8080";
 
 fn main() {
 	let root_path = Path::new("root");
